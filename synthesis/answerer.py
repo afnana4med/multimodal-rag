@@ -123,6 +123,23 @@ def _answer_openai(query: str, hits: list[dict], images: list[str]) -> str:
     return resp.choices[0].message.content.strip()
 
 
+def _answer_groq(query: str, hits: list[dict], images: list[str]) -> str:
+    """Groq (free, OpenAI-compatible). Uses a text model, so we don't attach raw
+    image bytes — the retrieved image *descriptions* are already in the context,
+    keeping the answer grounded in visual content without needing a vision model."""
+    from openai import OpenAI
+
+    client = OpenAI(api_key=config.GROQ_API_KEY, base_url=config.GROQ_BASE_URL)
+    user = f"Context:\n{_format_contexts(hits)}\n\nQuestion: {query}"
+    resp = client.chat.completions.create(
+        model=config.GROQ_SYNTHESIS_MODEL,
+        max_tokens=1024,
+        messages=[{"role": "system", "content": SYSTEM_PROMPT},
+                  {"role": "user", "content": user}],
+    )
+    return resp.choices[0].message.content.strip()
+
+
 def _answer_extractive(query: str, hits: list[dict], images: list[str]) -> str:
     """No-LLM fallback: present the strongest retrieved evidence with citations.
     Honest about what it is — this is retrieval output, not a written answer."""
@@ -149,6 +166,8 @@ def ask(query: str, k: int = 5, rerank: bool = False,
         text = _answer_anthropic(query, hits, images)
     elif provider == "openai":
         text = _answer_openai(query, hits, images)
+    elif provider == "groq":
+        text = _answer_groq(query, hits, images)
     else:
         text = _answer_extractive(query, hits, images)
 

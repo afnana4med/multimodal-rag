@@ -48,9 +48,13 @@ def ensure_dirs() -> None:
 # ---------------------------------------------------------------------------
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip() or None
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip() or None
+# Groq is OpenAI-compatible (free tier) — used via the openai client + a base_url.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip() or None
+GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 
 HAS_OPENAI = OPENAI_API_KEY is not None
 HAS_ANTHROPIC = ANTHROPIC_API_KEY is not None
+HAS_GROQ = GROQ_API_KEY is not None
 
 
 # ---------------------------------------------------------------------------
@@ -81,12 +85,15 @@ if HAS_ANTHROPIC:
     VISION_PROVIDER = os.getenv("VISION_PROVIDER", "anthropic")
 elif HAS_OPENAI:
     VISION_PROVIDER = os.getenv("VISION_PROVIDER", "openai")
+elif HAS_GROQ:
+    VISION_PROVIDER = os.getenv("VISION_PROVIDER", "groq")
 else:
     VISION_PROVIDER = os.getenv("VISION_PROVIDER", "ocr")
 
 # Default models per provider (overridable via .env).
 ANTHROPIC_VISION_MODEL = os.getenv("ANTHROPIC_VISION_MODEL", "claude-sonnet-4-6")
 OPENAI_VISION_MODEL = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")
+GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
 
 # ---------------------------------------------------------------------------
@@ -98,11 +105,14 @@ if HAS_ANTHROPIC:
     SYNTHESIS_PROVIDER = os.getenv("SYNTHESIS_PROVIDER", "anthropic")
 elif HAS_OPENAI:
     SYNTHESIS_PROVIDER = os.getenv("SYNTHESIS_PROVIDER", "openai")
+elif HAS_GROQ:
+    SYNTHESIS_PROVIDER = os.getenv("SYNTHESIS_PROVIDER", "groq")
 else:
     SYNTHESIS_PROVIDER = os.getenv("SYNTHESIS_PROVIDER", "extractive")
 
 ANTHROPIC_SYNTHESIS_MODEL = os.getenv("ANTHROPIC_SYNTHESIS_MODEL", "claude-sonnet-4-6")
 OPENAI_SYNTHESIS_MODEL = os.getenv("OPENAI_SYNTHESIS_MODEL", "gpt-4o")
+GROQ_SYNTHESIS_MODEL = os.getenv("GROQ_SYNTHESIS_MODEL", "llama-3.3-70b-versatile")
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +140,7 @@ def summary() -> str:
         f"  synthesis  : {SYNTHESIS_PROVIDER}",
         f"  openai key : {'yes' if HAS_OPENAI else 'no'}",
         f"  claude key : {'yes' if HAS_ANTHROPIC else 'no'}",
+        f"  groq key   : {'yes' if HAS_GROQ else 'no'}",
     ]
     return "\n".join(lines)
 

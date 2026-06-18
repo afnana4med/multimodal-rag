@@ -115,6 +115,26 @@ def _summarize_openai(image_path: str) -> str:
     return resp.choices[0].message.content.strip()
 
 
+def _summarize_groq(image_path: str) -> str:
+    """Groq vision (free, OpenAI-compatible) via a multimodal Llama-4 model."""
+    from openai import OpenAI
+
+    client = OpenAI(api_key=config.GROQ_API_KEY, base_url=config.GROQ_BASE_URL)
+    resp = client.chat.completions.create(
+        model=config.GROQ_VISION_MODEL,
+        max_tokens=1024,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": IMAGE_SUMMARY_PROMPT},
+                {"type": "image_url", "image_url": {
+                    "url": f"data:image/png;base64,{_b64(image_path)}"}},
+            ],
+        }],
+    )
+    return resp.choices[0].message.content.strip()
+
+
 def _summarize_ocr(image_path: str) -> str:
     """FREE fallback: pull any text printed on the image via tesseract OCR.
 
@@ -140,6 +160,8 @@ def summarize_image(image_path: str, provider: str | None = None) -> str:
         return _summarize_anthropic(image_path)
     if provider == "openai":
         return _summarize_openai(image_path)
+    if provider == "groq":
+        return _summarize_groq(image_path)
     if provider == "ocr":
         return _summarize_ocr(image_path)
     raise ValueError(f"Unknown vision provider: {provider}")
@@ -188,7 +210,7 @@ def summarize_document(pdf_path: str | Path, provider: str | None = None) -> lis
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize a PDF's extracted images into text.")
     parser.add_argument("pdf", help="Path to the PDF")
-    parser.add_argument("--provider", choices=["anthropic", "openai", "ocr"],
+    parser.add_argument("--provider", choices=["anthropic", "openai", "groq", "ocr"],
                         help="Override the auto-detected vision provider")
     args = parser.parse_args()
     config.ensure_dirs()
