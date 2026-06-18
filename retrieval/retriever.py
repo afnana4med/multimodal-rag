@@ -59,17 +59,27 @@ class HybridRetriever:
         self.embedder = get_embedder()
 
     # --- the two base rankers, each returning an ORDERED list of ids ---
-    def _vector_ranking(self, query: str, n: int) -> list[str]:
+    # `doc_id`, when set, scopes the search to a single document so a
+    # multi-document corpus doesn't bleed irrelevant hits into the answer.
+    def _vector_ranking(self, query: str, n: int, doc_id: str | None = None) -> list[str]:
         qvec = self.embedder.embed_query(query)
-        res = get_collection().query(query_embeddings=[qvec], n_results=n, include=[])
+        where = {"doc_id": doc_id} if doc_id else None
+        res = get_collection().query(query_embeddings=[qvec], n_results=n, where=where, include=[])
         return res["ids"][0]
 
-    def _bm25_ranking(self, query: str, n: int) -> list[str]:
+    def _bm25_ranking(self, query: str, n: int, doc_id: str | None = None) -> list[str]:
         if not self._bm25:
             return []
         scores = self._bm25.get_scores(_tokenize(query))
         ranked = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
-        return [self.ids[i] for i in ranked[:n]]
+        out: list[str] = []
+        for i in ranked:
+            if doc_id and self.metadatas[i].get("doc_id") != doc_id:
+                continue
+            out.append(self.ids[i])
+            if len(out) >= n:
+                break
+        return out
 
     @staticmethod
     def _rrf(rankings: list[list[str]]) -> dict[str, float]:
@@ -81,10 +91,12 @@ class HybridRetriever:
         return fused
 
     def search(self, query: str, k: int = 5, candidate_pool: int = 20,
-               rerank: bool = False) -> list[dict]:
-        """Return top-k fused results. Each: id, document, metadata, score, type."""
-        vec_ids = self._vector_ranking(query, candidate_pool)
-        bm25_ids = self._bm25_ranking(query, candidate_pool)
+               rerank: bool = False, doc_id: str | None = None) -> list[dict]:
+        """Return top-k fused results. Each: id, document, metadata, score, type.
+
+        If `doc_id` is given, only that document's chunks are considered."""
+        vec_ids = self._vector_ranking(query, candidate_pool, doc_id)
+        bm25_ids = self._bm25_ranking(query, candidate_pool, doc_id)
         fused = self._rrf([vec_ids, bm25_ids])
 
         ordered = sorted(fused.items(), key=lambda kv: kv[1], reverse=True)

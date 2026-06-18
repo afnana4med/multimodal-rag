@@ -139,8 +139,9 @@ def _answer_extractive(query: str, hits: list[dict], images: list[str]) -> str:
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
-def ask(query: str, k: int = 5, rerank: bool = False) -> AnswerResult:
-    hits = get_retriever().search(query, k=k, rerank=rerank)
+def ask(query: str, k: int = 5, rerank: bool = False,
+        doc_id: str | None = None) -> AnswerResult:
+    hits = get_retriever().search(query, k=k, rerank=rerank, doc_id=doc_id)
     images = _select_image_evidence(hits)
     provider = config.SYNTHESIS_PROVIDER
 

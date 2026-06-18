@@ -1,0 +1,12 @@
+# Streamlit theme — "Dark Mode (OLED) data dashboard" design system.
+# Deep navy surfaces + green positive/CTA accent (good fit for financial data).
+[theme]
+base = "dark"
+primaryColor = "#22C55E"            # CTA / accent (positive green)
+backgroundColor = "#020617"         # app background (near-black navy)
+secondaryBackgroundColor = "#0F172A" # cards / sidebar
+textColor = "#F8FAFC"               # high-contrast text
+font = "sans serif"                 # Fira Sans is layered on via CSS
+
+[server]
+maxUploadSize = 50

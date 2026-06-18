@@ -28,9 +28,12 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from collections import Counter
+
 import config
-from indexing.store import ingest_pdf, stats
+from indexing.store import get_collection, ingest_pdf, stats
 from ingestion.summarize_images import summarize_document
+from retrieval.retriever import get_retriever
 from synthesis.answerer import ask
 
 config.ensure_dirs()
@@ -44,6 +47,7 @@ class QueryRequest(BaseModel):
     query: str
     k: int = 5
     rerank: bool = False
+    doc_id: str | None = None   # scope the query to a single document
 
 
 @app.get("/")
@@ -62,6 +66,14 @@ def get_stats():
     return stats()
 
 
+@app.get("/documents")
+def list_documents():
+    """List the distinct documents in the index (for the UI's doc selector)."""
+    data = get_collection().get(include=["metadatas"])
+    counts = Counter(m["doc_id"] for m in data["metadatas"])
+    return {"documents": [{"doc_id": d, "units": n} for d, n in sorted(counts.items())]}
+
+
 @app.post("/ingest")
 async def ingest(file: UploadFile = File(...)):
     """Upload a PDF and run the full ingestion pipeline synchronously."""
@@ -72,12 +84,15 @@ async def ingest(file: UploadFile = File(...)):
     # parse + summarize images (writes the manifest), then chunk + index.
     summarize_document(dest)
     n = ingest_pdf(dest)
+    # The retriever caches the whole corpus + BM25 index; drop it so the next
+    # query rebuilds with the newly added document included.
+    get_retriever.cache_clear()
     return {"doc_id": dest.stem, "units_indexed": n, **stats()}
 
 
 @app.post("/query")
 def query(req: QueryRequest):
-    res = ask(req.query, k=req.k, rerank=req.rerank)
+    res = ask(req.query, k=req.k, rerank=req.rerank, doc_id=req.doc_id)
     data = res.model_dump()
     # Expose just the basename so the UI can build /images/<name> URLs.
     data["image_files"] = [Path(p).name for p in res.image_evidence]
