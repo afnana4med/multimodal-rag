@@ -1,0 +1,72 @@
+[
+  {
+    "doc": "attention_is_all_you_need.pdf",
+    "query": "How many layers are in the encoder stack?",
+    "expected_page": 3,
+    "expected_evidence_type": "text",
+    "expected_answer_contains": ["6"]
+  },
+  {
+    "doc": "attention_is_all_you_need.pdf",
+    "query": "What is the model dimension d_model?",
+    "expected_page": 3,
+    "expected_evidence_type": "text",
+    "expected_answer_contains": ["512"]
+  },
+  {
+    "doc": "attention_is_all_you_need.pdf",
+    "query": "How many attention heads does multi-head attention use?",
+    "expected_page": 5,
+    "expected_evidence_type": "text",
+    "expected_answer_contains": ["8"]
+  },
+  {
+    "doc": "attention_is_all_you_need.pdf",
+    "query": "What BLEU score did the Transformer achieve on WMT 2014 English-to-German translation?",
+    "expected_page": 8,
+    "expected_evidence_type": "text",
+    "expected_answer_contains": ["28"]
+  },
+  {
+    "doc": "attention_is_all_you_need.pdf",
+    "query": "What is the formula for scaled dot-product attention?",
+    "expected_page": 4,
+    "expected_evidence_type": "text",
+    "expected_answer_contains": ["softmax"]
+  },
+  {
+    "doc": "attention_is_all_you_need.pdf",
+    "query": "What does the Transformer model architecture diagram show?",
+    "expected_page": 3,
+    "expected_evidence_type": "image",
+    "expected_answer_contains": ["attention"]
+  },
+  {
+    "doc": "attention_is_all_you_need.pdf",
+    "query": "What functions are used for positional encoding?",
+    "expected_page": 6,
+    "expected_evidence_type": "text",
+    "expected_answer_contains": ["sine"]
+  },
+  {
+    "doc": "attention_is_all_you_need.pdf",
+    "query": "What hardware was used to train the models?",
+    "expected_page": 7,
+    "expected_evidence_type": "text",
+    "expected_answer_contains": ["GPU"]
+  },
+  {
+    "doc": "attention_is_all_you_need.pdf",
+    "query": "What optimizer was used during training?",
+    "expected_page": 7,
+    "expected_evidence_type": "text",
+    "expected_answer_contains": ["Adam"]
+  },
+  {
+    "doc": "attention_is_all_you_need.pdf",
+    "query": "What dropout rate was used for the base model?",
+    "expected_page": 7,
+    "expected_evidence_type": "text",
+    "expected_answer_contains": ["0.1"]
+  }
+]

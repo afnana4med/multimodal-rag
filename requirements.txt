@@ -37,3 +37,6 @@ requests>=2.31                  # Streamlit UI -> FastAPI calls
 # ---- Utilities ----
 python-dotenv>=1.0              # load API keys from .env
 pydantic>=2.0                   # typed data models
+
+# ---- Dev / testing ----
+pytest>=8.0                     # test suite (tests/)
