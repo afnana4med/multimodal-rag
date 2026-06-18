@@ -1,0 +1,39 @@
+# ============================================================================
+#  Multimodal RAG — dependencies
+#  Design note: every LLM/embedding provider is OPTIONAL. The system runs
+#  fully free/local (sentence-transformers + tesseract OCR) and "upgrades"
+#  to OpenAI / Anthropic automatically when an API key is present in .env.
+# ============================================================================
+
+# ---- Core PDF parsing (lightweight, deploy-friendly, Python 3.13 OK) ----
+pymupdf>=1.24                   # fast text + embedded-image extraction (the "fitz" module)
+pdfplumber>=0.11                # robust table extraction with cell geometry
+pillow                          # image loading/saving
+pypdf>=4.0                      # page counting / lightweight PDF utilities
+
+# ---- Vision (chart/table -> text) ----
+pytesseract>=0.3.10             # FREE fallback: OCR via the tesseract binary
+# openai / anthropic below provide the real vision-LLM path when a key exists
+
+# ---- LLM + embeddings (all optional — used only if a key is set) ----
+openai>=1.0                     # text-embedding-3-small + GPT-4o vision
+anthropic>=0.39                 # Claude vision summarization + answer synthesis
+sentence-transformers>=3.0      # FREE local embeddings + optional cross-encoder reranker
+
+# ---- Vector store + retrieval ----
+chromadb>=0.5                   # local persistent vector database
+rank-bm25>=0.2                  # keyword (lexical) retrieval for hybrid search
+
+# ---- Text processing ----
+langchain-text-splitters>=0.3   # RecursiveCharacterTextSplitter for chunking
+tiktoken>=0.7                   # token counting (matches OpenAI tokenizer)
+
+# ---- API + UI ----
+fastapi>=0.110
+uvicorn[standard]>=0.29
+streamlit>=1.36
+requests>=2.31                  # Streamlit UI -> FastAPI calls
+
+# ---- Utilities ----
+python-dotenv>=1.0              # load API keys from .env
+pydantic>=2.0                   # typed data models
