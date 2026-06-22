@@ -66,9 +66,22 @@ def fetch_status(api_url: str):
     return info, docs
 
 
-def ingest_pdf(api_url: str, name: str, data: bytes):
+def ingest_pdf(api_url: str, name: str, data: bytes, api_key: str | None = None):
     return requests.post(f"{api_url}/ingest",
-                         files={"file": (name, data, "application/pdf")}, timeout=600).json()
+                         files={"file": (name, data, "application/pdf")},
+                         data={"api_key": api_key} if api_key else None, timeout=600).json()
+
+
+def key_provider(key: str | None) -> str | None:
+    """Friendly provider name from a key prefix (for the bring-your-own-key field)."""
+    k = (key or "").strip()
+    if k.startswith("gsk_"):
+        return "Groq"
+    if k.startswith("sk-ant-"):
+        return "Claude"
+    if k.startswith("sk-"):
+        return "OpenAI"
+    return None
 
 
 def render_chart(spec: dict) -> None:
@@ -131,11 +144,22 @@ with st.sidebar:
         info, documents = fetch_status(api_url)
         total = sum(d["units"] for d in documents)
         st.markdown(f'<span class="pill ok">● Connected · {total} units</span>', unsafe_allow_html=True)
-        st.markdown(f'<div style="margin-top:.4rem"><span class="chip-tag">synth: {info["synthesis_provider"]}</span>'
-                    f'<span class="chip-tag">vision: {info["vision_provider"]}</span></div>', unsafe_allow_html=True)
     except Exception:
         st.markdown('<span class="pill err">● API not reachable</span>', unsafe_allow_html=True)
         st.caption("Start it: `./run.sh`")
+
+    st.divider()
+    st.markdown('<div class="slabel">Your API key</div>', unsafe_allow_html=True)
+    user_key = st.text_input("API key", type="password", label_visibility="collapsed",
+                             placeholder="gsk_… (Groq) / sk-… / sk-ant-…").strip()
+    kp = key_provider(user_key)
+    if kp:
+        st.markdown(f'<span class="pill ok">● using your {kp} key</span>', unsafe_allow_html=True)
+    elif user_key:
+        st.markdown('<span class="pill err">● unrecognized key</span>', unsafe_allow_html=True)
+    else:
+        st.caption("Paste a free [Groq](https://console.groq.com) key (or OpenAI / Claude) "
+                   "for written answers + charts. Used per request, never stored.")
 
     st.divider()
     st.markdown('<div class="slabel">Document</div>', unsafe_allow_html=True)
@@ -161,7 +185,7 @@ def upload_widget(key: str) -> None:
     if pdf and st.button("Ingest document", type="primary", key=f"btn_{key}", use_container_width=True):
         with st.spinner("Parsing, summarizing, indexing…"):
             try:
-                r = ingest_pdf(api_url, pdf.name, pdf.getvalue())
+                r = ingest_pdf(api_url, pdf.name, pdf.getvalue(), user_key or None)
                 fetch_status.clear()
                 st.success(f"Indexed '{r['doc_id']}' (+{r['units_indexed']})")
                 st.rerun()
@@ -183,7 +207,8 @@ if prompt:
         with st.spinner("Thinking…"):
             resp = requests.post(
                 f"{api_url}/query",
-                json={"query": prompt, "k": k, "rerank": rerank, "doc_id": selected_doc_id},
+                json={"query": prompt, "k": k, "rerank": rerank,
+                      "doc_id": selected_doc_id, "api_key": user_key or None},
                 timeout=120,
             ).json()
         st.session_state.messages.append({

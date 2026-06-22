@@ -76,6 +76,18 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "multimodal_rag")
 
 
+def provider_for_key(api_key: str | None) -> str | None:
+    """Detect the LLM provider from a user-supplied key prefix (bring-your-own-key)."""
+    k = (api_key or "").strip()
+    if k.startswith("gsk_"):
+        return "groq"
+    if k.startswith("sk-ant-"):
+        return "anthropic"
+    if k.startswith("sk-"):
+        return "openai"
+    return None
+
+
 def summary() -> str:
     return "\n".join([
         "Multimodal RAG configuration",

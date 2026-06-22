@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -30,6 +30,7 @@ class QueryRequest(BaseModel):
     k: int = 5
     rerank: bool = False
     doc_id: str | None = None
+    api_key: str | None = None   # bring-your-own-key; used for this request only
 
 
 @app.get("/")
@@ -56,11 +57,11 @@ def list_documents():
 
 
 @app.post("/ingest")
-async def ingest(file: UploadFile = File(...)):
+async def ingest(file: UploadFile = File(...), api_key: str | None = Form(None)):
     dest = config.PDF_DIR / file.filename
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f)
-    summarize_document(dest)
+    summarize_document(dest, api_key=api_key)
     n = ingest_pdf(dest)
     get_retriever.cache_clear()  # rebuild with the new document on next query
     return {"doc_id": dest.stem, "units_indexed": n, **stats()}
@@ -68,7 +69,7 @@ async def ingest(file: UploadFile = File(...)):
 
 @app.post("/query")
 def query(req: QueryRequest):
-    res = ask(req.query, k=req.k, rerank=req.rerank, doc_id=req.doc_id)
+    res = ask(req.query, k=req.k, rerank=req.rerank, doc_id=req.doc_id, api_key=req.api_key)
     data = res.model_dump()
     data["image_files"] = [Path(p).name for p in res.image_evidence]
     return data

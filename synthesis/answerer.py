@@ -102,10 +102,10 @@ def _b64(path: str) -> str:
     return base64.b64encode(Path(path).read_bytes()).decode("utf-8")
 
 
-def _answer_anthropic(query: str, hits: list[dict], images: list[str]) -> str:
+def _answer_anthropic(query: str, hits: list[dict], images: list[str], api_key: str | None = None) -> str:
     import anthropic
 
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(api_key=api_key or config.ANTHROPIC_API_KEY)
     content: list[dict] = [{"type": "text", "text": f"Context:\n{_format_contexts(hits)}"}]
     for p in images:
         content.append({"type": "image", "source": {
@@ -117,10 +117,10 @@ def _answer_anthropic(query: str, hits: list[dict], images: list[str]) -> str:
     return resp.content[0].text.strip()
 
 
-def _answer_openai(query: str, hits: list[dict], images: list[str]) -> str:
+def _answer_openai(query: str, hits: list[dict], images: list[str], api_key: str | None = None) -> str:
     from openai import OpenAI
 
-    client = OpenAI(api_key=config.OPENAI_API_KEY)
+    client = OpenAI(api_key=api_key or config.OPENAI_API_KEY)
     content: list[dict] = [{"type": "text", "text": f"Context:\n{_format_contexts(hits)}"}]
     for p in images:
         content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{_b64(p)}"}})
@@ -131,12 +131,12 @@ def _answer_openai(query: str, hits: list[dict], images: list[str]) -> str:
     return resp.choices[0].message.content.strip()
 
 
-def _answer_groq(query: str, hits: list[dict], images: list[str]) -> tuple[str, dict | None]:
+def _answer_groq(query: str, hits: list[dict], images: list[str], api_key: str | None = None) -> tuple[str, dict | None]:
     """JSON mode -> {answer, chart}. Text model, so image *descriptions* in the
     context (not raw bytes) keep answers grounded in visual content."""
     from openai import OpenAI
 
-    client = OpenAI(api_key=config.GROQ_API_KEY, base_url=config.GROQ_BASE_URL)
+    client = OpenAI(api_key=api_key or config.GROQ_API_KEY, base_url=config.GROQ_BASE_URL)
     resp = client.chat.completions.create(
         model=config.GROQ_SYNTHESIS_MODEL, max_tokens=1500,
         response_format={"type": "json_object"},
@@ -162,18 +162,24 @@ def _answer_extractive(query: str, hits: list[dict], images: list[str]) -> str:
     return "\n".join(lines)
 
 
-def ask(query: str, k: int = 5, rerank: bool = False, doc_id: str | None = None) -> AnswerResult:
+def ask(query: str, k: int = 5, rerank: bool = False, doc_id: str | None = None,
+        api_key: str | None = None) -> AnswerResult:
     hits = get_retriever().search(query, k=k, rerank=rerank, doc_id=doc_id)
     images = _select_image_evidence(hits)
-    provider = config.SYNTHESIS_PROVIDER
+
+    # A user-supplied key (bring-your-own-key) overrides the server default and
+    # is used only for this request — never stored.
+    user_provider = config.provider_for_key(api_key)
+    provider = user_provider or config.SYNTHESIS_PROVIDER
+    key = api_key.strip() if user_provider else None
 
     chart = None
     if provider == "anthropic":
-        text = _answer_anthropic(query, hits, images)
+        text = _answer_anthropic(query, hits, images, key)
     elif provider == "openai":
-        text = _answer_openai(query, hits, images)
+        text = _answer_openai(query, hits, images, key)
     elif provider == "groq":
-        text, chart = _answer_groq(query, hits, images)
+        text, chart = _answer_groq(query, hits, images, key)
     else:
         text = _answer_extractive(query, hits, images)
 

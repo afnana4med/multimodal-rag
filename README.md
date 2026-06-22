@@ -29,7 +29,7 @@ A Retrieval-Augmented Generation system that understands **both text and visuals
 - 💬 **Ask in plain English** — get answers grounded in the document, with **page citations**.
 - 🖼️ **Figures become searchable** — every chart/diagram is described by a vision model and indexed alongside the text, so *"what does Figure 3 show?"* is a valid query.
 - 📈 **Charts on demand** — ask *"chart revenue by product"* and it extracts the real numbers from the document and renders an interactive chart.
-- 🆓 **Runs free** — works fully local out of the box; drop in an API key and it auto-upgrades.
+- 🔑 **Bring your own key** — paste a free Groq (or OpenAI / Claude) key in the UI; it's used per-request and **never stored**. Works fully local with no key at all.
 
 ---
 
@@ -127,9 +127,12 @@ PyMuPDF · pdfplumber · sentence-transformers / OpenAI embeddings · ChromaDB �
 
 ## Deploying
 
-- **UI →** [Streamlit Community Cloud](https://streamlit.io/cloud) (free, deploys straight from this repo).
-- **API →** any host that runs a process — [Render](https://render.com), [Railway](https://railway.app), or [Hugging Face Spaces](https://huggingface.co/spaces). A `Procfile` is included.
-- *Note:* Vercel isn't suitable — Streamlit needs a persistent WebSocket server and the pipeline ships PyTorch + ChromaDB, which don't fit a serverless runtime.
+One-container deploy (API + UI) is set up for **[Hugging Face Spaces](https://huggingface.co/spaces)** via the included `Dockerfile`:
+
+1. Create a Space → **Docker** SDK → push this repo to it.
+2. For a **public** demo, leave the server keyless — visitors paste their own key in the sidebar (your quota is never used). To run on your own key instead, add `GROQ_API_KEY` as a Space secret.
+
+*Vercel isn't suitable — Streamlit needs a persistent WebSocket server and the pipeline ships PyTorch + ChromaDB, which don't fit a serverless runtime.*
 
 ---
 

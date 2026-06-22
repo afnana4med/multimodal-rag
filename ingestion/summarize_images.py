@@ -52,10 +52,10 @@ def _b64(image_path: str) -> str:
     return base64.b64encode(Path(image_path).read_bytes()).decode("utf-8")
 
 
-def _summarize_anthropic(image_path: str) -> str:
+def _summarize_anthropic(image_path: str, api_key: str | None = None) -> str:
     import anthropic
 
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(api_key=api_key or config.ANTHROPIC_API_KEY)
     resp = client.messages.create(
         model=config.ANTHROPIC_VISION_MODEL, max_tokens=1024,
         messages=[{"role": "user", "content": [
@@ -88,7 +88,16 @@ def _summarize_ocr(image_path: str) -> str:
     return f"[OCR-extracted text from image] {text}" if text else "[OCR found no readable text in this image]"
 
 
-def summarize_image(image_path: str, provider: str | None = None) -> str:
+def summarize_image(image_path: str, provider: str | None = None, api_key: str | None = None) -> str:
+    # A user-supplied key (bring-your-own-key) selects the provider for this call.
+    user_provider = config.provider_for_key(api_key)
+    if user_provider == "anthropic":
+        return _summarize_anthropic(image_path, api_key)
+    if user_provider == "openai":
+        return _summarize_openai_compatible(image_path, api_key, None, config.OPENAI_VISION_MODEL)
+    if user_provider == "groq":
+        return _summarize_openai_compatible(image_path, api_key, config.GROQ_BASE_URL, config.GROQ_VISION_MODEL)
+
     provider = provider or config.VISION_PROVIDER
     if provider == "anthropic":
         return _summarize_anthropic(image_path)
@@ -108,19 +117,20 @@ def _load_or_parse(pdf_path: Path) -> list[Element]:
     return parse_pdf(pdf_path)
 
 
-def summarize_document(pdf_path: str | Path, provider: str | None = None) -> list[Element]:
+def summarize_document(pdf_path: str | Path, provider: str | None = None,
+                       api_key: str | None = None) -> list[Element]:
     """Fill in each image Element's text, then persist the manifest + a
     path->summary JSON."""
     pdf_path = Path(pdf_path)
     elements = _load_or_parse(pdf_path)
-    provider = provider or config.VISION_PROVIDER
+    effective = config.provider_for_key(api_key) or provider or config.VISION_PROVIDER
     image_elements = [e for e in elements if e.type == "image"]
-    print(f"Summarizing {len(image_elements)} images with provider='{provider}'...")
+    print(f"Summarizing {len(image_elements)} images with provider='{effective}'...")
 
     summaries: dict[str, str] = {}
     for i, el in enumerate(image_elements, 1):
         try:
-            desc = summarize_image(el.image_path, provider)
+            desc = summarize_image(el.image_path, provider, api_key)
         except Exception as exc:
             desc = f"[summary failed: {exc}]"
         el.content = desc
