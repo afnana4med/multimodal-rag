@@ -2,65 +2,115 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="Multimodal RAG", page_icon="📊",
+FAVICON = str(Path(__file__).parent / "favicon.png")
+st.set_page_config(page_title="Multimodal RAG", page_icon=FAVICON,
                    layout="centered", initial_sidebar_state="expanded")
 
-CHART_PALETTE = ["#4F46E5", "#06B6D4", "#22C55E", "#F59E0B", "#EF4444", "#A855F7"]
+# Orange-led palette for charts on a dark canvas.
+CHART_PALETTE = ["#FF7A1A", "#FFB020", "#22D3EE", "#34D399", "#F472B6", "#A78BFA"]
 
 st.markdown(
     """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    :root { --accent:#4F46E5; --text:#0F172A; --muted:#64748B; --border:#E6E8EC; --surface:#F7F8FA; }
+    :root { --accent:#FF7A1A; --accent2:#FF4D00; --bg:#060607; --surface:#141417;
+            --surface2:#1C1C21; --text:#F5F5F7; --muted:#9A9AA3; --border:rgba(255,138,26,.16); }
+
     html, body, .stApp, [class*="css"] { font-family:'Inter',sans-serif; }
-    .stApp { background:#FFFFFF; }
-    #MainMenu, header[data-testid="stHeader"], footer { display:none; }
-    .block-container { max-width:780px; padding-top:2.2rem; padding-bottom:7rem; }
-    h1,h2,h3 { letter-spacing:-0.02em; font-weight:600; }
-    [data-testid="stSidebar"] { background:var(--surface); border-right:1px solid var(--border); }
-    [data-testid="stChatMessage"] { background:transparent; padding:.35rem 0; gap:.7rem; }
+    .stApp { background:
+        radial-gradient(1100px 560px at 82% -12%, rgba(255,106,0,.10), transparent 60%), var(--bg);
+        color:var(--text); }
+
+    /* Hide chrome BUT keep the sidebar expand control visible */
+    #MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { display:none !important; }
+    header[data-testid="stHeader"] { background:transparent !important; }
+    [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"] {
+        display:flex !important; visibility:visible !important; z-index:1000; }
+    [data-testid="stSidebarCollapsedControl"] button, [data-testid="collapsedControl"] button,
+    [data-testid="stSidebarCollapseButton"] button { color:var(--accent) !important; }
+
+    /* Animated background: drifting dot grid + two floating orange orbs (GPU) */
+    .stApp::before { content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+        background-image:radial-gradient(rgba(255,138,26,.10) 1.2px, transparent 1.4px);
+        background-size:30px 30px; animation:drift 26s linear infinite; will-change:transform; }
+    @keyframes drift { from{transform:translate3d(0,0,0);} to{transform:translate3d(30px,30px,0);} }
+    .bg-orbs { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+    .orb { position:absolute; border-radius:50%; filter:blur(72px); opacity:.30; will-change:transform; }
+    .orb.a { width:420px;height:420px; left:-90px; top:-70px;
+        background:radial-gradient(circle,var(--accent),transparent 70%); animation:floatA 23s ease-in-out infinite; }
+    .orb.b { width:360px;height:360px; right:-70px; bottom:-50px;
+        background:radial-gradient(circle,var(--accent2),transparent 70%); animation:floatB 28s ease-in-out infinite; }
+    @keyframes floatA { 0%,100%{transform:translate3d(0,0,0);} 50%{transform:translate3d(42px,32px,0);} }
+    @keyframes floatB { 0%,100%{transform:translate3d(0,0,0);} 50%{transform:translate3d(-34px,-42px,0);} }
+
+    /* Content sits above the animated layer */
+    [data-testid="stSidebar"], .block-container, [data-testid="stBottom"] { position:relative; z-index:1; }
+    .block-container { max-width:780px; padding-top:2.4rem; padding-bottom:7rem; }
+    h1,h2,h3 { letter-spacing:-0.02em; font-weight:600; color:var(--text); }
+
+    [data-testid="stSidebar"] { background:rgba(10,10,12,.92); border-right:1px solid var(--border);
+        backdrop-filter:blur(8px); }
+
+    [data-testid="stChatMessage"] { background:rgba(20,20,23,.7); border:1px solid var(--border);
+        border-radius:14px; padding:.5rem .85rem; margin-bottom:.5rem; }
     [data-testid="stChatMessageContent"] { font-size:0.97rem; line-height:1.7; color:var(--text); }
-    [data-testid="stChatInput"] { border-radius:16px !important; border:1px solid var(--border) !important;
-        box-shadow:0 6px 24px rgba(15,23,42,0.06) !important; }
+
+    [data-testid="stBottom"] { background:transparent; }
+    [data-testid="stChatInput"] { background:var(--surface) !important; border-radius:16px !important;
+        border:1px solid var(--border) !important; box-shadow:0 8px 30px rgba(0,0,0,.5) !important; }
     [data-testid="stChatInput"]:focus-within { border-color:var(--accent) !important;
-        box-shadow:0 0 0 3px rgba(79,70,229,.15) !important; }
-    button[data-testid="stBaseButton-primary"]{ background:var(--accent)!important; border:0!important;
-        border-radius:12px!important; font-weight:600!important; }
-    button[data-testid="stBaseButton-primary"]:hover{ filter:brightness(1.07); }
-    button[data-testid="stBaseButton-secondary"]{ background:#fff!important; color:var(--text)!important;
-        border:1px solid var(--border)!important; border-radius:12px!important; font-weight:500!important;
-        text-align:left!important; transition:all .15s ease; }
-    button[data-testid="stBaseButton-secondary"]:hover{ border-color:var(--accent)!important;
-        background:#FAFAFF!important; transform:translateY(-1px); }
+        box-shadow:0 0 0 3px rgba(255,122,26,.22) !important; }
+    [data-testid="stChatInput"] textarea { color:var(--text) !important; }
+
+    button[data-testid="stBaseButton-primary"]{ background:linear-gradient(135deg,var(--accent),var(--accent2)) !important;
+        border:0 !important; border-radius:12px !important; font-weight:600 !important; color:#1A0E00 !important;
+        box-shadow:0 6px 20px rgba(255,77,0,.28); transition:filter .15s ease, transform .15s ease; }
+    button[data-testid="stBaseButton-primary"]:hover{ filter:brightness(1.08); transform:translateY(-1px); }
+    button[data-testid="stBaseButton-secondary"]{ background:var(--surface) !important; color:var(--text) !important;
+        border:1px solid var(--border) !important; border-radius:12px !important; font-weight:500 !important;
+        text-align:left !important; transition:all .15s ease; }
+    button[data-testid="stBaseButton-secondary"]:hover{ border-color:var(--accent) !important;
+        background:var(--surface2) !important; transform:translateY(-1px); box-shadow:0 6px 18px rgba(255,77,0,.18); }
     .stButton>button{ cursor:pointer; }
-    *:focus-visible{ outline:2px solid var(--accent)!important; outline-offset:2px; }
-    .hero { text-align:center; margin:2.2rem 0 1.4rem; }
-    .hero-title { font-size:2rem; font-weight:600; letter-spacing:-0.03em; color:var(--text); }
+    *:focus-visible{ outline:2px solid var(--accent) !important; outline-offset:2px; }
+
+    .stTextInput input, [data-baseweb="input"], [data-baseweb="select"] > div {
+        background:var(--surface2) !important; color:var(--text) !important; border-radius:10px !important;
+        border:1px solid var(--border) !important; }
+
+    .hero { text-align:center; margin:2.4rem 0 1.4rem; }
+    .hero-title { font-size:2.1rem; font-weight:700; letter-spacing:-0.03em;
+        background:linear-gradient(120deg,#fff 30%,var(--accent)); -webkit-background-clip:text;
+        -webkit-text-fill-color:transparent; }
     .hero-sub { color:var(--muted); font-size:1.0rem; margin-top:.6rem; line-height:1.6; }
+
     .cites { margin-top:.5rem; }
     .cite { display:inline-block; padding:.1rem .55rem; margin:.15rem .3rem 0 0; border-radius:999px;
-        font-size:.74rem; font-weight:500; color:var(--accent); background:#EEF2FF; border:1px solid #E0E4FF; }
+        font-size:.74rem; font-weight:500; color:var(--accent); background:rgba(255,122,26,.12);
+        border:1px solid rgba(255,122,26,.32); }
     .pill { display:inline-flex; align-items:center; gap:.35rem; padding:.18rem .6rem; border-radius:999px;
         font-size:.76rem; font-weight:500; border:1px solid var(--border); }
-    .pill.ok{ background:#ECFDF5; color:#047857; border-color:#A7F3D0; }
-    .pill.err{ background:#FEF2F2; color:#B91C1C; border-color:#FECACA; }
-    .chip-tag{ display:inline-block; padding:.1rem .45rem; margin:.1rem .2rem 0 0; border-radius:7px;
-        font-size:.7rem; color:var(--muted); background:#fff; border:1px solid var(--border); }
+    .pill.ok{ background:rgba(52,211,153,.12); color:#6EE7B7; border-color:rgba(52,211,153,.3); }
+    .pill.err{ background:rgba(248,113,113,.12); color:#FCA5A5; border-color:rgba(248,113,113,.3); }
     .slabel{ font-size:.74rem; font-weight:600; color:var(--muted); text-transform:uppercase;
         letter-spacing:.06em; margin:.2rem 0 .5rem; }
-    @media (prefers-reduced-motion: reduce){ *{ transition:none!important; } }
+
+    @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
     </style>
     """,
     unsafe_allow_html=True,
 )
+st.markdown('<div class="bg-orbs"><div class="orb a"></div><div class="orb b"></div></div>',
+            unsafe_allow_html=True)
 
 
 @st.cache_data(ttl=8, show_spinner=False)
 def fetch_status(api_url: str):
-    """Service info + indexed documents (cached briefly to avoid refetching on every rerun)."""
     info = requests.get(f"{api_url}/", timeout=6).json()
     docs = requests.get(f"{api_url}/documents", timeout=6).json().get("documents", [])
     return info, docs
@@ -73,7 +123,6 @@ def ingest_pdf(api_url: str, name: str, data: bytes, api_key: str | None = None)
 
 
 def key_provider(key: str | None) -> str | None:
-    """Friendly provider name from a key prefix (for the bring-your-own-key field)."""
     k = (key or "").strip()
     if k.startswith("gsk_"):
         return "Groq"
@@ -103,9 +152,9 @@ def render_chart(spec: dict) -> None:
                           text=[f"{v:,.0f}" for v in s["values"]], textposition="outside"))
         fig.update_layout(barmode="group")
     fig.update_layout(
-        title=dict(text=spec.get("title", ""), font=dict(size=15, color="#0F172A")),
+        title=dict(text=spec.get("title", ""), font=dict(size=15, color="#F5F5F7")),
         xaxis_title=spec.get("x_label"), yaxis_title=spec.get("y_label"),
-        template="plotly_white", font=dict(family="Inter", size=12, color="#0F172A"),
+        template="plotly_dark", font=dict(family="Inter", size=12, color="#E5E5EA"),
         margin=dict(t=48, l=8, r=8, b=8), height=380, showlegend=len(series) > 1,
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
@@ -134,9 +183,9 @@ def doc_label(doc_id: str, units: int) -> str:
 st.session_state.setdefault("messages", [])
 st.session_state.setdefault("pending", None)
 
-# --- Sidebar: connection, document scope, upload, settings ---
+# --- Sidebar: connection, your key, document scope, upload, settings ---
 with st.sidebar:
-    st.markdown("### 📊 Multimodal RAG")
+    st.markdown("### 🔶 Multimodal RAG")
     api_url = st.text_input("API URL", value="http://localhost:8000",
                             label_visibility="collapsed").rstrip("/")
     documents = []
@@ -179,8 +228,7 @@ with st.sidebar:
 
 
 def upload_widget(key: str) -> None:
-    """File uploader available both in the sidebar and the main welcome area, so
-    it never disappears when the sidebar is collapsed."""
+    """File uploader available in both the sidebar and the main welcome area."""
     pdf = st.file_uploader("Upload a PDF", type=["pdf"], key=key, label_visibility="collapsed")
     if pdf and st.button("Ingest document", type="primary", key=f"btn_{key}", use_container_width=True):
         with st.spinner("Parsing, summarizing, indexing…"):
