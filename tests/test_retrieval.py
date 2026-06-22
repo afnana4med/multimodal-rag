@@ -33,7 +33,7 @@ def test_answer_has_citations_and_structure():
     res = ask("How does multi-head attention work?", k=5)
     assert res.answer
     assert res.citations == sorted(set(res.citations))   # unique, sorted pages
-    assert res.provider in {"anthropic", "openai", "extractive"}
+    assert res.provider in {"anthropic", "openai", "groq", "extractive"}
     assert all(isinstance(p, int) for p in res.citations)
 
 

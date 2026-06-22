@@ -1,57 +1,32 @@
-"""
-ui/app.py — Kimi-style chat for the multimodal RAG system (brief §6).
-
-A thin client over the FastAPI service. It can:
-  - chat over uploaded PDFs (text, tables, figures),
-  - retrieve and show the actual figures pulled from a document, and
-  - render charts that the model builds from data extracted out of the document
-    (e.g. "chart revenue by product" -> a bar chart of real 10-Q numbers).
-
-Design: clean "AI-native" single column — Inter typography, generous
-whitespace, a welcome state with suggestion chips, soft chat bubbles, and an
-indigo accent. All RAG logic lives in the API; this file only renders.
-
-Run:  streamlit run ui/app.py   (with the API on :8000)
-"""
+"""Streamlit chat UI for the multimodal RAG system. Thin client over the API."""
 
 from __future__ import annotations
 
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="Multimodal RAG", page_icon="📊", layout="centered")
+st.set_page_config(page_title="Multimodal RAG", page_icon="📊",
+                   layout="centered", initial_sidebar_state="expanded")
 
 CHART_PALETTE = ["#4F46E5", "#06B6D4", "#22C55E", "#F59E0B", "#EF4444", "#A855F7"]
 
-# --------------------------------------------------------------------------
-# Styling — Kimi-style light, airy chat
-# --------------------------------------------------------------------------
 st.markdown(
     """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     :root { --accent:#4F46E5; --text:#0F172A; --muted:#64748B; --border:#E6E8EC; --surface:#F7F8FA; }
-
     html, body, .stApp, [class*="css"] { font-family:'Inter',sans-serif; }
     .stApp { background:#FFFFFF; }
     #MainMenu, header[data-testid="stHeader"], footer { display:none; }
     .block-container { max-width:780px; padding-top:2.2rem; padding-bottom:7rem; }
     h1,h2,h3 { letter-spacing:-0.02em; font-weight:600; }
-
-    /* Sidebar */
     [data-testid="stSidebar"] { background:var(--surface); border-right:1px solid var(--border); }
-
-    /* Chat rows */
     [data-testid="stChatMessage"] { background:transparent; padding:.35rem 0; gap:.7rem; }
     [data-testid="stChatMessageContent"] { font-size:0.97rem; line-height:1.7; color:var(--text); }
-
-    /* Chat input — rounded, soft shadow, indigo focus */
     [data-testid="stChatInput"] { border-radius:16px !important; border:1px solid var(--border) !important;
         box-shadow:0 6px 24px rgba(15,23,42,0.06) !important; }
     [data-testid="stChatInput"]:focus-within { border-color:var(--accent) !important;
         box-shadow:0 0 0 3px rgba(79,70,229,.15) !important; }
-
-    /* Buttons: primary = indigo (Ingest), secondary = outline pill (chips) */
     button[data-testid="stBaseButton-primary"]{ background:var(--accent)!important; border:0!important;
         border-radius:12px!important; font-weight:600!important; }
     button[data-testid="stBaseButton-primary"]:hover{ filter:brightness(1.07); }
@@ -62,13 +37,9 @@ st.markdown(
         background:#FAFAFF!important; transform:translateY(-1px); }
     .stButton>button{ cursor:pointer; }
     *:focus-visible{ outline:2px solid var(--accent)!important; outline-offset:2px; }
-
-    /* Welcome / hero */
-    .hero { text-align:center; margin:2.5rem 0 1.6rem; }
+    .hero { text-align:center; margin:2.2rem 0 1.4rem; }
     .hero-title { font-size:2rem; font-weight:600; letter-spacing:-0.03em; color:var(--text); }
     .hero-sub { color:var(--muted); font-size:1.0rem; margin-top:.6rem; line-height:1.6; }
-
-    /* Citation pills + helpers */
     .cites { margin-top:.5rem; }
     .cite { display:inline-block; padding:.1rem .55rem; margin:.15rem .3rem 0 0; border-radius:999px;
         font-size:.74rem; font-weight:500; color:var(--accent); background:#EEF2FF; border:1px solid #E0E4FF; }
@@ -87,11 +58,20 @@ st.markdown(
 )
 
 
-# --------------------------------------------------------------------------
-# Helpers
-# --------------------------------------------------------------------------
+@st.cache_data(ttl=8, show_spinner=False)
+def fetch_status(api_url: str):
+    """Service info + indexed documents (cached briefly to avoid refetching on every rerun)."""
+    info = requests.get(f"{api_url}/", timeout=6).json()
+    docs = requests.get(f"{api_url}/documents", timeout=6).json().get("documents", [])
+    return info, docs
+
+
+def ingest_pdf(api_url: str, name: str, data: bytes):
+    return requests.post(f"{api_url}/ingest",
+                         files={"file": (name, data, "application/pdf")}, timeout=600).json()
+
+
 def render_chart(spec: dict) -> None:
-    """Render a model-produced chart spec with Plotly (numbers come from the doc)."""
     import plotly.graph_objects as go
 
     ctype, cats, series = spec["type"], spec["categories"], spec["series"]
@@ -103,7 +83,7 @@ def render_chart(spec: dict) -> None:
         for i, s in enumerate(series):
             fig.add_trace(go.Scatter(x=cats, y=s["values"], mode="lines+markers", name=s["name"],
                           line=dict(color=CHART_PALETTE[i % len(CHART_PALETTE)], width=3)))
-    else:  # bar
+    else:
         for i, s in enumerate(series):
             fig.add_trace(go.Bar(x=cats, y=s["values"], name=s["name"],
                           marker_color=CHART_PALETTE[i % len(CHART_PALETTE)],
@@ -138,25 +118,17 @@ def doc_label(doc_id: str, units: int) -> str:
     return f"{name}  ·  {units} units"
 
 
-# --------------------------------------------------------------------------
-# State
-# --------------------------------------------------------------------------
 st.session_state.setdefault("messages", [])
 st.session_state.setdefault("pending", None)
 
-# --------------------------------------------------------------------------
-# Sidebar — connection, scope, upload, settings
-# --------------------------------------------------------------------------
+# --- Sidebar: connection, document scope, upload, settings ---
 with st.sidebar:
     st.markdown("### 📊 Multimodal RAG")
     api_url = st.text_input("API URL", value="http://localhost:8000",
                             label_visibility="collapsed").rstrip("/")
-
-    documents, connected = [], False
+    documents = []
     try:
-        info = requests.get(f"{api_url}/", timeout=6).json()
-        documents = requests.get(f"{api_url}/documents", timeout=6).json().get("documents", [])
-        connected = True
+        info, documents = fetch_status(api_url)
         total = sum(d["units"] for d in documents)
         st.markdown(f'<span class="pill ok">● Connected · {total} units</span>', unsafe_allow_html=True)
         st.markdown(f'<div style="margin-top:.4rem"><span class="chip-tag">synth: {info["synthesis_provider"]}</span>'
@@ -170,23 +142,9 @@ with st.sidebar:
     options = {"All documents": None}
     for d in documents:
         options[doc_label(d["doc_id"], d["units"])] = d["doc_id"]
-    # Default to the single doc if there's exactly one, else "All documents".
-    default_idx = 1 if len(options) == 2 else 0
-    scope = st.selectbox("Scope", list(options.keys()), index=default_idx, label_visibility="collapsed")
+    scope = st.selectbox("Scope", list(options.keys()),
+                         index=1 if len(options) == 2 else 0, label_visibility="collapsed")
     selected_doc_id = options[scope]
-
-    st.markdown('<div class="slabel">Add a document</div>', unsafe_allow_html=True)
-    pdf = st.file_uploader("Upload a PDF", type=["pdf"], label_visibility="collapsed")
-    if pdf and st.button("Ingest", type="primary", use_container_width=True):
-        with st.spinner("Parsing, summarizing, indexing…"):
-            try:
-                r = requests.post(f"{api_url}/ingest",
-                                  files={"file": (pdf.name, pdf.getvalue(), "application/pdf")},
-                                  timeout=600).json()
-                st.success(f"Indexed '{r['doc_id']}' (+{r['units_indexed']})")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Ingest failed: {e}")
 
     st.divider()
     k = st.slider("Results (k)", 3, 10, 6)
@@ -195,9 +153,27 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-# --------------------------------------------------------------------------
-# Resolve prompt (chat input OR a clicked suggestion chip)
-# --------------------------------------------------------------------------
+
+def upload_widget(key: str) -> None:
+    """File uploader available both in the sidebar and the main welcome area, so
+    it never disappears when the sidebar is collapsed."""
+    pdf = st.file_uploader("Upload a PDF", type=["pdf"], key=key, label_visibility="collapsed")
+    if pdf and st.button("Ingest document", type="primary", key=f"btn_{key}", use_container_width=True):
+        with st.spinner("Parsing, summarizing, indexing…"):
+            try:
+                r = ingest_pdf(api_url, pdf.name, pdf.getvalue())
+                fetch_status.clear()
+                st.success(f"Indexed '{r['doc_id']}' (+{r['units_indexed']})")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Ingest failed: {e}")
+
+
+with st.sidebar:
+    st.markdown('<div class="slabel">Add a document</div>', unsafe_allow_html=True)
+    upload_widget("up_side")
+
+# --- Resolve prompt (chat input or a clicked suggestion chip) ---
 typed = st.chat_input("Ask anything about your document…")
 prompt = typed or st.session_state.pop("pending", None)
 
@@ -224,9 +200,7 @@ if prompt:
         })
     st.rerun()
 
-# --------------------------------------------------------------------------
-# Render: welcome state (empty) or the conversation
-# --------------------------------------------------------------------------
+# --- Welcome state or conversation ---
 if not st.session_state.messages:
     st.markdown(
         '<div class="hero"><div class="hero-title">What would you like to know?</div>'
@@ -234,6 +208,8 @@ if not st.session_state.messages:
         'I can retrieve figures from the file and build charts from its data.</div></div>',
         unsafe_allow_html=True,
     )
+    with st.expander("📎 Upload a document", expanded=not documents):
+        upload_widget("up_main")
     suggestions = [
         "Summarize this report",
         "Chart revenue by product",

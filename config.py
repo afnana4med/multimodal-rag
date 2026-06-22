@@ -1,18 +1,5 @@
-"""
-Central configuration for the multimodal RAG system.
-
-Why this file exists
---------------------
-Every other module imports from here instead of reading os.environ directly.
-That gives us ONE place that decides:
-  * where files live on disk (PDFs, extracted images, the vector DB), and
-  * which provider/model to use for embeddings, vision, and synthesis.
-
-The key idea: providers are *auto-detected* from your .env. If you have no
-API keys, the system runs 100% free and local (sentence-transformers + OCR).
-The moment you add OPENAI_API_KEY or ANTHROPIC_API_KEY, the relevant stage
-"upgrades" to that provider — with zero code changes anywhere else.
-"""
+"""Central configuration. Providers are auto-detected from .env; with no keys
+the system runs fully local (sentence-transformers + OCR + extractive)."""
 
 from __future__ import annotations
 
@@ -21,14 +8,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env (if present) into os.environ. Safe to call even if .env is missing.
 load_dotenv()
 
-
-# ---------------------------------------------------------------------------
-# 1. Filesystem paths — everything is relative to the project root, so the
-#    code works no matter what directory you run it from.
-# ---------------------------------------------------------------------------
+# --- Paths ---
 PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data"
 PDF_DIR = DATA_DIR / "pdfs"
@@ -37,50 +19,28 @@ CHROMA_DIR = DATA_DIR / "chromadb"
 
 
 def ensure_dirs() -> None:
-    """Create the data directories if they don't exist yet."""
     for d in (PDF_DIR, IMAGE_DIR, CHROMA_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
 
-# ---------------------------------------------------------------------------
-# 2. API keys (optional). Presence of a key is what flips a stage from the
-#    free local path to the hosted-provider path.
-# ---------------------------------------------------------------------------
+# --- API keys (optional; presence flips a stage to that provider) ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip() or None
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip() or None
-# Groq is OpenAI-compatible (free tier) — used via the openai client + a base_url.
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip() or None
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip() or None  # OpenAI-compatible
 GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 
 HAS_OPENAI = OPENAI_API_KEY is not None
 HAS_ANTHROPIC = ANTHROPIC_API_KEY is not None
 HAS_GROQ = GROQ_API_KEY is not None
 
-
-# ---------------------------------------------------------------------------
-# 3. Embeddings.
-#    CRITICAL RULE (see brief §5): text chunks and image summaries MUST use
-#    the SAME embedding model, or their vectors live in different geometric
-#    spaces and similarity scores become meaningless. This single setting is
-#    used for both — that's how we guarantee the rule holds.
-# ---------------------------------------------------------------------------
-# "openai" -> text-embedding-3-small (needs key);  "local" -> free, on-device.
-EMBEDDING_PROVIDER = os.getenv(
-    "EMBEDDING_PROVIDER", "openai" if HAS_OPENAI else "local"
-)
-
+# --- Embeddings (same model for text AND image summaries — see README) ---
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "openai" if HAS_OPENAI else "local")
 if EMBEDDING_PROVIDER == "openai":
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 else:
-    # bge-small is a strong, tiny (~130MB) free retrieval model. Downloads
-    # once to ~/.cache on first use, then runs offline on CPU.
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
 
-
-# ---------------------------------------------------------------------------
-# 4. Vision (turn a chart/table/diagram image into searchable text).
-#    Priority: Anthropic (Claude) > OpenAI (GPT-4o) > free OCR fallback.
-# ---------------------------------------------------------------------------
+# --- Vision (image -> searchable text). Priority: anthropic > openai > groq > ocr ---
 if HAS_ANTHROPIC:
     VISION_PROVIDER = os.getenv("VISION_PROVIDER", "anthropic")
 elif HAS_OPENAI:
@@ -90,17 +50,11 @@ elif HAS_GROQ:
 else:
     VISION_PROVIDER = os.getenv("VISION_PROVIDER", "ocr")
 
-# Default models per provider (overridable via .env).
 ANTHROPIC_VISION_MODEL = os.getenv("ANTHROPIC_VISION_MODEL", "claude-sonnet-4-6")
 OPENAI_VISION_MODEL = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")
 GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
-
-# ---------------------------------------------------------------------------
-# 5. Answer synthesis (the final "write the answer" LLM call).
-#    Same priority order. With no key we fall back to "extractive": we return
-#    the best retrieved passages directly instead of an LLM-written answer.
-# ---------------------------------------------------------------------------
+# --- Synthesis. Priority: anthropic > openai > groq > extractive ---
 if HAS_ANTHROPIC:
     SYNTHESIS_PROVIDER = os.getenv("SYNTHESIS_PROVIDER", "anthropic")
 elif HAS_OPENAI:
@@ -114,26 +68,16 @@ ANTHROPIC_SYNTHESIS_MODEL = os.getenv("ANTHROPIC_SYNTHESIS_MODEL", "claude-sonne
 OPENAI_SYNTHESIS_MODEL = os.getenv("OPENAI_SYNTHESIS_MODEL", "gpt-4o")
 GROQ_SYNTHESIS_MODEL = os.getenv("GROQ_SYNTHESIS_MODEL", "llama-3.3-70b-versatile")
 
-
-# ---------------------------------------------------------------------------
-# 6. Parsing / chunking knobs.
-# ---------------------------------------------------------------------------
-# Skip extracted images smaller than this (px) — filters out logos, rules,
-# bullet icons, and other non-informative graphics.
+# --- Parsing / chunking knobs ---
 MIN_IMAGE_WIDTH = int(os.getenv("MIN_IMAGE_WIDTH", "100"))
 MIN_IMAGE_HEIGHT = int(os.getenv("MIN_IMAGE_HEIGHT", "100"))
-
-# Text chunking (used on Day 3).
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "512"))      # ~tokens
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "512"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
-
-# ChromaDB collection name.
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "multimodal_rag")
 
 
 def summary() -> str:
-    """Human-readable snapshot of the active configuration (for logging)."""
-    lines = [
+    return "\n".join([
         "Multimodal RAG configuration",
         f"  embeddings : {EMBEDDING_PROVIDER:<10} ({EMBEDDING_MODEL})",
         f"  vision     : {VISION_PROVIDER}",
@@ -141,8 +85,7 @@ def summary() -> str:
         f"  openai key : {'yes' if HAS_OPENAI else 'no'}",
         f"  claude key : {'yes' if HAS_ANTHROPIC else 'no'}",
         f"  groq key   : {'yes' if HAS_GROQ else 'no'}",
-    ]
-    return "\n".join(lines)
+    ])
 
 
 if __name__ == "__main__":

@@ -1,29 +1,12 @@
-"""
-answerer.py — final answer synthesis with image evidence (brief §6, Day 5).
-
-The last stage of RAG: take the retrieved evidence and write a grounded answer.
-What makes THIS multimodal: when a top hit is an image (a chart/diagram), we
-attach the actual image bytes to the LLM call — so the model reasons over the
-real pixels, not just our text description of them. The answer can then cite
-both page numbers and figure evidence.
-
-Cost guardrail (brief §12): we only attach an image when it is BOTH type
-"image" AND ranked in the top 3. Images are expensive in tokens; don't send
-them blindly.
-
-Provider (auto from config):
-  anthropic  -> Claude (claude-sonnet-4-6), images attached
-  openai     -> GPT-4o, images attached
-  extractive -> no LLM: return the best retrieved passages (free fallback)
-
-    from synthesis.answerer import ask
-    ask("How does multi-head attention work?")
-"""
+"""Answer synthesis. Builds a grounded answer from retrieved evidence and, when
+useful, a chart spec whose numbers are extracted from the document context.
+Provider auto-selected by config: anthropic > openai > groq > extractive."""
 
 from __future__ import annotations
 
 import argparse
 import base64
+import json
 import sys
 from pathlib import Path
 
@@ -39,22 +22,10 @@ SYSTEM_PROMPT = """You answer questions about a document using ONLY the provided
 Rules:
 - Ground every claim in the context. If the context does not contain the answer, say so plainly — do not invent facts.
 - Cite the page number for each fact in square brackets, e.g. [p.8].
-- If an attached image (chart/diagram/table) supports the answer, reference it explicitly (e.g. "the architecture diagram on p.3 shows ...").
+- If an attached image (chart/diagram/table) supports the answer, reference it explicitly.
 - Be specific with numbers and labels. Prefer concrete values over vague descriptions.
 - Keep the answer concise and directly responsive to the question."""
 
-
-class AnswerResult(BaseModel):
-    answer: str
-    citations: list[int]          # page numbers referenced (sorted, unique)
-    image_evidence: list[str]     # image file paths attached as evidence
-    provider: str                 # which backend produced the answer
-    contexts: list[dict]          # the retrieved hits used (for transparency/UI)
-    chart: dict | None = None     # optional chart spec built from extracted data
-
-
-# Prompt that asks the model to BOTH answer and (when useful) emit a chart spec
-# whose numbers are extracted verbatim from the retrieved context.
 CHART_SYSTEM_PROMPT = SYSTEM_PROMPT + """
 
 Additionally, return your response as a JSON object with exactly two keys:
@@ -66,20 +37,25 @@ Additionally, return your response as a JSON object with exactly two keys:
   Chart spec shape:
     {"type": "bar" | "line" | "pie",
      "title": "...", "x_label": "...", "y_label": "... (include units)",
-     "categories": ["..."],                       // x-axis / pie slice labels
-     "series": [{"name": "...", "values": [n, ...]}]}  // values align 1:1 with categories
-  For pie, use a single series. Output ONLY the JSON object."""
+     "categories": ["..."],
+     "series": [{"name": "...", "values": [n, ...]}]}
+  Values align 1:1 with categories. For pie, use a single series. Output ONLY the JSON object."""
+
+
+class AnswerResult(BaseModel):
+    answer: str
+    citations: list[int]
+    image_evidence: list[str]
+    provider: str
+    contexts: list[dict]
+    chart: dict | None = None
 
 
 def _validate_chart(chart) -> dict | None:
-    """Defensively validate a model-produced chart spec; drop it if malformed
-    so a bad spec can never crash the UI."""
-    if not isinstance(chart, dict):
+    """Defensively validate a model-produced chart spec; drop it if malformed."""
+    if not isinstance(chart, dict) or chart.get("type") not in {"bar", "line", "pie"}:
         return None
-    if chart.get("type") not in {"bar", "line", "pie"}:
-        return None
-    cats = chart.get("categories")
-    series = chart.get("series")
+    cats, series = chart.get("categories"), chart.get("series")
     if not isinstance(cats, list) or not cats or not isinstance(series, list) or not series:
         return None
     clean_series = []
@@ -95,28 +71,20 @@ def _validate_chart(chart) -> dict | None:
     if not clean_series:
         return None
     return {
-        "type": chart["type"],
-        "title": str(chart.get("title", "")),
-        "x_label": str(chart.get("x_label", "")),
-        "y_label": str(chart.get("y_label", "")),
-        "categories": [str(c) for c in cats],
-        "series": clean_series,
+        "type": chart["type"], "title": str(chart.get("title", "")),
+        "x_label": str(chart.get("x_label", "")), "y_label": str(chart.get("y_label", "")),
+        "categories": [str(c) for c in cats], "series": clean_series,
     }
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 def _format_contexts(hits: list[dict]) -> str:
-    blocks = []
-    for i, h in enumerate(hits, 1):
-        m = h["metadata"]
-        blocks.append(f"[{i}] (page {m['page']}, {m['type']})\n{h['document']}")
-    return "\n\n".join(blocks)
+    return "\n\n".join(
+        f"[{i}] (page {h['metadata']['page']}, {h['metadata']['type']})\n{h['document']}"
+        for i, h in enumerate(hits, 1))
 
 
 def _select_image_evidence(hits: list[dict], max_images: int = 3) -> list[str]:
-    """Brief §12: attach an image only if it's type=image AND in the top 3."""
+    """Attach an image only if it is type=image AND in the top 3 (token-cost guard)."""
     paths = []
     for h in hits[:3]:
         if h["metadata"].get("type") == "image":
@@ -134,9 +102,6 @@ def _b64(path: str) -> str:
     return base64.b64encode(Path(path).read_bytes()).decode("utf-8")
 
 
-# ---------------------------------------------------------------------------
-# Provider backends
-# ---------------------------------------------------------------------------
 def _answer_anthropic(query: str, hits: list[dict], images: list[str]) -> str:
     import anthropic
 
@@ -146,13 +111,9 @@ def _answer_anthropic(query: str, hits: list[dict], images: list[str]) -> str:
         content.append({"type": "image", "source": {
             "type": "base64", "media_type": "image/png", "data": _b64(p)}})
     content.append({"type": "text", "text": f"Question: {query}"})
-
     resp = client.messages.create(
-        model=config.ANTHROPIC_SYNTHESIS_MODEL,
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": content}],
-    )
+        model=config.ANTHROPIC_SYNTHESIS_MODEL, max_tokens=1024,
+        system=SYSTEM_PROMPT, messages=[{"role": "user", "content": content}])
     return resp.content[0].text.strip()
 
 
@@ -162,51 +123,37 @@ def _answer_openai(query: str, hits: list[dict], images: list[str]) -> str:
     client = OpenAI(api_key=config.OPENAI_API_KEY)
     content: list[dict] = [{"type": "text", "text": f"Context:\n{_format_contexts(hits)}"}]
     for p in images:
-        content.append({"type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{_b64(p)}"}})
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{_b64(p)}"}})
     content.append({"type": "text", "text": f"Question: {query}"})
-
     resp = client.chat.completions.create(
-        model=config.OPENAI_SYNTHESIS_MODEL,
-        max_tokens=1024,
-        messages=[{"role": "system", "content": SYSTEM_PROMPT},
-                  {"role": "user", "content": content}],
-    )
+        model=config.OPENAI_SYNTHESIS_MODEL, max_tokens=1024,
+        messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": content}])
     return resp.choices[0].message.content.strip()
 
 
 def _answer_groq(query: str, hits: list[dict], images: list[str]) -> tuple[str, dict | None]:
-    """Groq (free, OpenAI-compatible). Uses JSON mode so the model returns BOTH a
-    written answer AND, when useful, a chart spec whose numbers are pulled straight
-    from the retrieved context. Text model => no raw images, but the image
-    *descriptions* are already in the context, keeping answers grounded."""
-    import json
-
+    """JSON mode -> {answer, chart}. Text model, so image *descriptions* in the
+    context (not raw bytes) keep answers grounded in visual content."""
     from openai import OpenAI
 
     client = OpenAI(api_key=config.GROQ_API_KEY, base_url=config.GROQ_BASE_URL)
-    user = f"Context:\n{_format_contexts(hits)}\n\nQuestion: {query}"
     resp = client.chat.completions.create(
-        model=config.GROQ_SYNTHESIS_MODEL,
-        max_tokens=1500,
+        model=config.GROQ_SYNTHESIS_MODEL, max_tokens=1500,
         response_format={"type": "json_object"},
         messages=[{"role": "system", "content": CHART_SYSTEM_PROMPT},
-                  {"role": "user", "content": user}],
-    )
+                  {"role": "user", "content": f"Context:\n{_format_contexts(hits)}\n\nQuestion: {query}"}])
     raw = resp.choices[0].message.content
     try:
         data = json.loads(raw)
         return data.get("answer", "").strip(), _validate_chart(data.get("chart"))
     except (json.JSONDecodeError, AttributeError):
-        # Model didn't return valid JSON — treat the whole thing as the answer.
         return (raw or "").strip(), None
 
 
 def _answer_extractive(query: str, hits: list[dict], images: list[str]) -> str:
-    """No-LLM fallback: present the strongest retrieved evidence with citations.
-    Honest about what it is — this is retrieval output, not a written answer."""
+    """No-LLM fallback: return the strongest retrieved passages with citations."""
     lines = ["(No synthesis LLM configured — showing the most relevant retrieved "
-             "evidence. Add an OpenAI/Anthropic key in .env for a written answer.)\n"]
+             "evidence. Add an API key in .env for a written answer.)\n"]
     for h in hits:
         m = h["metadata"]
         snippet = " ".join(h["document"].split())[:400]
@@ -215,11 +162,7 @@ def _answer_extractive(query: str, hits: list[dict], images: list[str]) -> str:
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# Public entry point
-# ---------------------------------------------------------------------------
-def ask(query: str, k: int = 5, rerank: bool = False,
-        doc_id: str | None = None) -> AnswerResult:
+def ask(query: str, k: int = 5, rerank: bool = False, doc_id: str | None = None) -> AnswerResult:
     hits = get_retriever().search(query, k=k, rerank=rerank, doc_id=doc_id)
     images = _select_image_evidence(hits)
     provider = config.SYNTHESIS_PROVIDER
@@ -235,14 +178,10 @@ def ask(query: str, k: int = 5, rerank: bool = False,
         text = _answer_extractive(query, hits, images)
 
     return AnswerResult(
-        answer=text,
-        citations=_citations(hits),
-        image_evidence=images,
-        provider=provider,
-        chart=chart,
+        answer=text, citations=_citations(hits), image_evidence=images,
+        provider=provider, chart=chart,
         contexts=[{"page": h["metadata"]["page"], "type": h["metadata"]["type"],
-                   "score": round(float(h["score"]), 4)} for h in hits],
-    )
+                   "score": round(float(h["score"]), 4)} for h in hits])
 
 
 def main() -> None:
@@ -251,14 +190,11 @@ def main() -> None:
     parser.add_argument("-k", type=int, default=5)
     parser.add_argument("--rerank", action="store_true")
     args = parser.parse_args()
-
     res = ask(args.question, k=args.k, rerank=args.rerank)
     print(f"\n=== ANSWER (provider: {res.provider}) ===\n{res.answer}\n")
     print(f"Citations (pages): {res.citations}")
-    if res.image_evidence:
-        print("Image evidence:")
-        for p in res.image_evidence:
-            print(f"  - {p}")
+    if res.chart:
+        print(f"Chart: {res.chart['type']} — {res.chart['title']}")
 
 
 if __name__ == "__main__":
