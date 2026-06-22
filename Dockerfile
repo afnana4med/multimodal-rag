@@ -1,25 +1,27 @@
 # Hugging Face Spaces (Docker SDK) — runs the API + Streamlit UI in one container.
 FROM python:3.11-slim
 
-# System deps for PDF parsing + OCR
+# System deps for PDF parsing + OCR (need root)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr poppler-utils curl \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-
-# Writable cache locations (HF Spaces containers need explicit, writable paths)
-ENV HOME=/app \
-    HF_HOME=/app/.cache/huggingface \
-    SENTENCE_TRANSFORMERS_HOME=/app/.cache/sentence-transformers \
+# HF Spaces convention: run as non-root user 1000
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH \
+    HF_HOME=/home/user/.cache/huggingface \
+    SENTENCE_TRANSFORMERS_HOME=/home/user/.cache/sentence-transformers \
     PYTHONUNBUFFERED=1
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+WORKDIR /home/user/app
 
-COPY . .
-RUN mkdir -p data/pdfs data/images data/chromadb .cache && chmod -R 777 data .cache
+COPY --chown=user requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-# HF Spaces serves the app on port 7860
+COPY --chown=user . .
+RUN mkdir -p data/pdfs data/images data/chromadb
+
 EXPOSE 7860
 CMD ["bash", "start.sh"]
