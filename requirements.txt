@@ -32,6 +32,7 @@ tiktoken>=0.7                   # token counting (matches OpenAI tokenizer)
 fastapi>=0.110
 uvicorn[standard]>=0.29
 streamlit>=1.36
+plotly>=5.20                    # render charts generated from extracted data
 requests>=2.31                  # Streamlit UI -> FastAPI calls
 
 # ---- Utilities ----

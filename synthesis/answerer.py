@@ -50,6 +50,58 @@ class AnswerResult(BaseModel):
     image_evidence: list[str]     # image file paths attached as evidence
     provider: str                 # which backend produced the answer
     contexts: list[dict]          # the retrieved hits used (for transparency/UI)
+    chart: dict | None = None     # optional chart spec built from extracted data
+
+
+# Prompt that asks the model to BOTH answer and (when useful) emit a chart spec
+# whose numbers are extracted verbatim from the retrieved context.
+CHART_SYSTEM_PROMPT = SYSTEM_PROMPT + """
+
+Additionally, return your response as a JSON object with exactly two keys:
+- "answer": your markdown answer (with [p.X] citations), following the rules above.
+- "chart": null, OR a chart spec visualizing data taken DIRECTLY from the context.
+  Include a chart only if the user asks to plot/chart/graph/visualize/compare/show
+  a breakdown or trend, OR when a numeric comparison clearly benefits from one.
+  NEVER invent or estimate numbers — use exact values found in the context.
+  Chart spec shape:
+    {"type": "bar" | "line" | "pie",
+     "title": "...", "x_label": "...", "y_label": "... (include units)",
+     "categories": ["..."],                       // x-axis / pie slice labels
+     "series": [{"name": "...", "values": [n, ...]}]}  // values align 1:1 with categories
+  For pie, use a single series. Output ONLY the JSON object."""
+
+
+def _validate_chart(chart) -> dict | None:
+    """Defensively validate a model-produced chart spec; drop it if malformed
+    so a bad spec can never crash the UI."""
+    if not isinstance(chart, dict):
+        return None
+    if chart.get("type") not in {"bar", "line", "pie"}:
+        return None
+    cats = chart.get("categories")
+    series = chart.get("series")
+    if not isinstance(cats, list) or not cats or not isinstance(series, list) or not series:
+        return None
+    clean_series = []
+    for s in series:
+        vals = s.get("values") if isinstance(s, dict) else None
+        if not isinstance(vals, list) or len(vals) != len(cats):
+            continue
+        try:
+            vals = [float(v) for v in vals]
+        except (TypeError, ValueError):
+            continue
+        clean_series.append({"name": str(s.get("name", "")), "values": vals})
+    if not clean_series:
+        return None
+    return {
+        "type": chart["type"],
+        "title": str(chart.get("title", "")),
+        "x_label": str(chart.get("x_label", "")),
+        "y_label": str(chart.get("y_label", "")),
+        "categories": [str(c) for c in cats],
+        "series": clean_series,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -123,21 +175,31 @@ def _answer_openai(query: str, hits: list[dict], images: list[str]) -> str:
     return resp.choices[0].message.content.strip()
 
 
-def _answer_groq(query: str, hits: list[dict], images: list[str]) -> str:
-    """Groq (free, OpenAI-compatible). Uses a text model, so we don't attach raw
-    image bytes — the retrieved image *descriptions* are already in the context,
-    keeping the answer grounded in visual content without needing a vision model."""
+def _answer_groq(query: str, hits: list[dict], images: list[str]) -> tuple[str, dict | None]:
+    """Groq (free, OpenAI-compatible). Uses JSON mode so the model returns BOTH a
+    written answer AND, when useful, a chart spec whose numbers are pulled straight
+    from the retrieved context. Text model => no raw images, but the image
+    *descriptions* are already in the context, keeping answers grounded."""
+    import json
+
     from openai import OpenAI
 
     client = OpenAI(api_key=config.GROQ_API_KEY, base_url=config.GROQ_BASE_URL)
     user = f"Context:\n{_format_contexts(hits)}\n\nQuestion: {query}"
     resp = client.chat.completions.create(
         model=config.GROQ_SYNTHESIS_MODEL,
-        max_tokens=1024,
-        messages=[{"role": "system", "content": SYSTEM_PROMPT},
+        max_tokens=1500,
+        response_format={"type": "json_object"},
+        messages=[{"role": "system", "content": CHART_SYSTEM_PROMPT},
                   {"role": "user", "content": user}],
     )
-    return resp.choices[0].message.content.strip()
+    raw = resp.choices[0].message.content
+    try:
+        data = json.loads(raw)
+        return data.get("answer", "").strip(), _validate_chart(data.get("chart"))
+    except (json.JSONDecodeError, AttributeError):
+        # Model didn't return valid JSON — treat the whole thing as the answer.
+        return (raw or "").strip(), None
 
 
 def _answer_extractive(query: str, hits: list[dict], images: list[str]) -> str:
@@ -162,12 +224,13 @@ def ask(query: str, k: int = 5, rerank: bool = False,
     images = _select_image_evidence(hits)
     provider = config.SYNTHESIS_PROVIDER
 
+    chart = None
     if provider == "anthropic":
         text = _answer_anthropic(query, hits, images)
     elif provider == "openai":
         text = _answer_openai(query, hits, images)
     elif provider == "groq":
-        text = _answer_groq(query, hits, images)
+        text, chart = _answer_groq(query, hits, images)
     else:
         text = _answer_extractive(query, hits, images)
 
@@ -176,6 +239,7 @@ def ask(query: str, k: int = 5, rerank: bool = False,
         citations=_citations(hits),
         image_evidence=images,
         provider=provider,
+        chart=chart,
         contexts=[{"page": h["metadata"]["page"], "type": h["metadata"]["type"],
                    "score": round(float(h["score"]), 4)} for h in hits],
     )

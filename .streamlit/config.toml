@@ -1,12 +1,11 @@
-# Streamlit theme — "Dark Mode (OLED) data dashboard" design system.
-# Deep navy surfaces + green positive/CTA accent (good fit for financial data).
+# Streamlit theme — clean "AI-native" chat (Kimi-style): light, airy, Inter.
 [theme]
-base = "dark"
-primaryColor = "#22C55E"            # CTA / accent (positive green)
-backgroundColor = "#020617"         # app background (near-black navy)
-secondaryBackgroundColor = "#0F172A" # cards / sidebar
-textColor = "#F8FAFC"               # high-contrast text
-font = "sans serif"                 # Fira Sans is layered on via CSS
+base = "light"
+primaryColor = "#4F46E5"            # indigo accent (send / primary actions)
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7F8FA" # sidebar / subtle surfaces
+textColor = "#0F172A"               # slate-900, high contrast
+font = "sans serif"                 # Inter layered on via CSS
 
 [server]
 maxUploadSize = 50
