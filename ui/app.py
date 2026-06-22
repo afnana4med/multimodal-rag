@@ -28,11 +28,12 @@ st.markdown(
 
     /* Hide chrome BUT keep the sidebar expand control visible */
     #MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { display:none !important; }
-    header[data-testid="stHeader"] { background:transparent !important; }
-    [data-testid="stSidebarCollapsedControl"], [data-testid="collapsedControl"] {
-        display:flex !important; visibility:visible !important; z-index:1000; }
-    [data-testid="stSidebarCollapsedControl"] button, [data-testid="collapsedControl"] button,
-    [data-testid="stSidebarCollapseButton"] button { color:var(--accent) !important; }
+    header[data-testid="stHeader"] { background:transparent !important; z-index:999 !important; }
+    /* Keep the "reopen sidebar" button visible when the sidebar is collapsed */
+    [data-testid="stExpandSidebarButton"] { display:inline-flex !important; visibility:visible !important;
+        opacity:1 !important; z-index:1001 !important; }
+    [data-testid="stExpandSidebarButton"] button, [data-testid="stSidebarCollapseButton"] button {
+        color:var(--accent) !important; }
 
     /* Animated background: drifting dot grid + two floating orange orbs (GPU) */
     .stApp::before { content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
