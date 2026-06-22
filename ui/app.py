@@ -28,12 +28,13 @@ st.markdown(
 
     /* Hide chrome BUT keep the sidebar expand control visible */
     #MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { display:none !important; }
-    header[data-testid="stHeader"] { background:transparent !important; z-index:999 !important; }
-    /* Keep the "reopen sidebar" button visible when the sidebar is collapsed */
-    [data-testid="stExpandSidebarButton"] { display:inline-flex !important; visibility:visible !important;
-        opacity:1 !important; z-index:1001 !important; }
-    [data-testid="stExpandSidebarButton"] button, [data-testid="stSidebarCollapseButton"] button {
-        color:var(--accent) !important; }
+    header[data-testid="stHeader"] { background:transparent !important; }
+    /* Keep the sidebar permanently visible (its collapsed state has no usable
+       reopen control on this dark theme). These !important overrides beat
+       Streamlit's inline collapse styles, so the sidebar can never be lost. */
+    [data-testid="stSidebar"] { transform:translateX(0) !important; margin-left:0 !important;
+        visibility:visible !important; min-width:250px !important; width:250px !important; }
+    [data-testid="stSidebarCollapseButton"] { display:none !important; }
 
     /* Animated background: drifting dot grid + two floating orange orbs (GPU) */
     .stApp::before { content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
