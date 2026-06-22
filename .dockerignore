@@ -1,0 +1,10 @@
+.venv/
+.git/
+__pycache__/
+*.pyc
+.env
+data/pdfs/*
+data/images/*
+data/chromadb/*
+data/*_elements.json
+data/*_summaries.json
