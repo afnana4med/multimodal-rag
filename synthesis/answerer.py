@@ -77,10 +77,25 @@ def _validate_chart(chart) -> dict | None:
     }
 
 
-def _format_contexts(hits: list[dict]) -> str:
-    return "\n\n".join(
-        f"[{i}] (page {h['metadata']['page']}, {h['metadata']['type']})\n{h['document']}"
-        for i, h in enumerate(hits, 1))
+def _format_contexts(hits: list[dict], max_chars: int = 900) -> str:
+    # Cap each chunk so large k values don't blow the model's token budget.
+    blocks = []
+    for i, h in enumerate(hits, 1):
+        doc = h["document"]
+        if len(doc) > max_chars:
+            doc = doc[:max_chars] + "…"
+        blocks.append(f"[{i}] (page {h['metadata']['page']}, {h['metadata']['type']})\n{doc}")
+    return "\n\n".join(blocks)
+
+
+def _evidence_lines(hits: list[dict]) -> str:
+    out = []
+    for h in hits:
+        m = h["metadata"]
+        snippet = " ".join(h["document"].split())[:400]
+        marker = f"  [image: {Path(m['image_path']).name}]" if m["type"] == "image" and m.get("image_path") else ""
+        out.append(f"• [p.{m['page']}] ({m['type']}){marker} {snippet}")
+    return "\n".join(out)
 
 
 def _select_image_evidence(hits: list[dict], max_images: int = 3) -> list[str]:
@@ -152,14 +167,8 @@ def _answer_groq(query: str, hits: list[dict], images: list[str], api_key: str |
 
 def _answer_extractive(query: str, hits: list[dict], images: list[str]) -> str:
     """No-LLM fallback: return the strongest retrieved passages with citations."""
-    lines = ["(No synthesis LLM configured — showing the most relevant retrieved "
-             "evidence. Add an API key in .env for a written answer.)\n"]
-    for h in hits:
-        m = h["metadata"]
-        snippet = " ".join(h["document"].split())[:400]
-        marker = f"  [image: {Path(m['image_path']).name}]" if m["type"] == "image" and m.get("image_path") else ""
-        lines.append(f"• [p.{m['page']}] ({m['type']}){marker} {snippet}")
-    return "\n".join(lines)
+    return ("(No synthesis LLM configured — showing the most relevant retrieved evidence. "
+            "Add an API key for a written answer.)\n\n" + _evidence_lines(hits))
 
 
 def ask(query: str, k: int = 5, rerank: bool = False, doc_id: str | None = None,
@@ -174,14 +183,29 @@ def ask(query: str, k: int = 5, rerank: bool = False, doc_id: str | None = None,
     key = api_key.strip() if user_provider else None
 
     chart = None
-    if provider == "anthropic":
-        text = _answer_anthropic(query, hits, images, key)
-    elif provider == "openai":
-        text = _answer_openai(query, hits, images, key)
-    elif provider == "groq":
-        text, chart = _answer_groq(query, hits, images, key)
-    else:
-        text = _answer_extractive(query, hits, images)
+    try:
+        if provider == "anthropic":
+            text = _answer_anthropic(query, hits, images, key)
+        elif provider == "openai":
+            text = _answer_openai(query, hits, images, key)
+        elif provider == "groq":
+            text, chart = _answer_groq(query, hits, images, key)
+        else:
+            text = _answer_extractive(query, hits, images)
+    except Exception as exc:
+        # Never 500 on an LLM hiccup — degrade to retrieved evidence + a reason.
+        msg = str(exc)
+        if "rate_limit" in msg or "429" in msg:
+            reason = ("the model's free daily rate limit was reached. Showing retrieved "
+                      "evidence instead — try again later, lower **k**, or set a different "
+                      "`GROQ_SYNTHESIS_MODEL`.")
+        elif "401" in msg or "invalid_api_key" in msg:
+            reason = "the API key was rejected. Showing retrieved evidence instead."
+        else:
+            reason = f"the LLM call failed ({type(exc).__name__}). Showing retrieved evidence instead."
+        text = f"⚠️ {reason}\n\n{_evidence_lines(hits)}"
+        chart = None
+        provider = f"{provider} (fallback)"
 
     return AnswerResult(
         answer=text, citations=_citations(hits), image_evidence=images,
