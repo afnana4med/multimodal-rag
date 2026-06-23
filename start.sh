@@ -11,4 +11,5 @@ for _ in $(seq 1 60); do
 done
 
 streamlit run ui/app.py \
-  --server.port 7860 --server.address 0.0.0.0 --server.headless true
+  --server.port 7860 --server.address 0.0.0.0 --server.headless true \
+  --server.enableXsrfProtection false --server.enableCORS false
