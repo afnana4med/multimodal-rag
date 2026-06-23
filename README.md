@@ -143,4 +143,4 @@ tests/       eval_queries.json · eval.py · smoke tests
 
 One-container deploy (API + UI) is set up for **[Hugging Face Spaces](https://huggingface.co/spaces)** via the included `Dockerfile`: create a Space (Docker SDK) and push this repo. For a **public** demo, leave the server keyless — visitors paste their own key, so your quota is never used.
 
-*Vercel isn't suitable — Streamlit needs a persistent WebSocket server and the pipeline ships PyTorch + ChromaDB, which don't fit a serverless runtime.*
+---
