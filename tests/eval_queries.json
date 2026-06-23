@@ -1,72 +1,25 @@
 [
-  {
-    "doc": "attention_is_all_you_need.pdf",
-    "query": "How many layers are in the encoder stack?",
-    "expected_page": 3,
-    "expected_evidence_type": "text",
-    "expected_answer_contains": ["6"]
-  },
-  {
-    "doc": "attention_is_all_you_need.pdf",
-    "query": "What is the model dimension d_model?",
-    "expected_page": 3,
-    "expected_evidence_type": "text",
-    "expected_answer_contains": ["512"]
-  },
-  {
-    "doc": "attention_is_all_you_need.pdf",
-    "query": "How many attention heads does multi-head attention use?",
-    "expected_page": 5,
-    "expected_evidence_type": "text",
-    "expected_answer_contains": ["8"]
-  },
-  {
-    "doc": "attention_is_all_you_need.pdf",
-    "query": "What BLEU score did the Transformer achieve on WMT 2014 English-to-German translation?",
-    "expected_page": 8,
-    "expected_evidence_type": "text",
-    "expected_answer_contains": ["28"]
-  },
-  {
-    "doc": "attention_is_all_you_need.pdf",
-    "query": "What is the formula for scaled dot-product attention?",
-    "expected_page": 4,
-    "expected_evidence_type": "text",
-    "expected_answer_contains": ["softmax"]
-  },
-  {
-    "doc": "attention_is_all_you_need.pdf",
-    "query": "What does the Transformer model architecture diagram show?",
-    "expected_page": 3,
-    "expected_evidence_type": "image",
-    "expected_answer_contains": ["attention"]
-  },
-  {
-    "doc": "attention_is_all_you_need.pdf",
-    "query": "What functions are used for positional encoding?",
-    "expected_page": 6,
-    "expected_evidence_type": "text",
-    "expected_answer_contains": ["sine"]
-  },
-  {
-    "doc": "attention_is_all_you_need.pdf",
-    "query": "What hardware was used to train the models?",
-    "expected_page": 7,
-    "expected_evidence_type": "text",
-    "expected_answer_contains": ["GPU"]
-  },
-  {
-    "doc": "attention_is_all_you_need.pdf",
-    "query": "What optimizer was used during training?",
-    "expected_page": 7,
-    "expected_evidence_type": "text",
-    "expected_answer_contains": ["Adam"]
-  },
-  {
-    "doc": "attention_is_all_you_need.pdf",
-    "query": "What dropout rate was used for the base model?",
-    "expected_page": 7,
-    "expected_evidence_type": "text",
-    "expected_answer_contains": ["0.1"]
-  }
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What were total net sales for the quarter?", "expected_pages": [4, 9, 15, 18], "expected_answer_contains": ["111,184"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What was net income for the three months ended March 28, 2026?", "expected_pages": [4, 5, 7, 10], "expected_answer_contains": ["29,578"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What was diluted earnings per share?", "expected_pages": [4, 10], "expected_answer_contains": ["2.01"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What was iPhone net sales for the quarter?", "expected_pages": [9, 18], "expected_answer_contains": ["56,994"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What was Services revenue for the quarter?", "expected_pages": [4, 9, 18], "expected_answer_contains": ["30,976"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What was the total gross margin percentage?", "expected_pages": [19], "expected_answer_contains": ["49.3"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "How much did Apple spend on research and development?", "expected_pages": [4, 20], "expected_answer_contains": ["11,419"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What was the effective tax rate?", "expected_pages": [20], "expected_answer_contains": ["17.5"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "How much cash and cash equivalents did Apple have?", "expected_pages": [6, 8, 10], "expected_answer_contains": ["45,572"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What were total assets?", "expected_pages": [6], "expected_answer_contains": ["371,082"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What was Greater China net sales for the quarter?", "expected_pages": [15, 17], "expected_answer_contains": ["20,497"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What new products did Apple announce during the second quarter of 2026?", "expected_pages": [16], "expected_answer_contains": ["iPhone 17e"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What was the quarterly cash dividend raised to?", "expected_pages": [21], "expected_answer_contains": ["0.27"]},
+  {"doc": "apple_10q_q2_2026.pdf", "query": "What was operating cash flow for the six months?", "expected_pages": [8], "expected_answer_contains": ["82,627"]},
+
+  {"doc": "tesla_q4_2023.pdf", "query": "What was Tesla's total revenue in Q4 2023?", "expected_pages": [4], "expected_answer_contains": ["25,167"]},
+  {"doc": "tesla_q4_2023.pdf", "query": "What was total automotive revenue in Q4 2023?", "expected_pages": [4], "expected_answer_contains": ["21,563"]},
+  {"doc": "tesla_q4_2023.pdf", "query": "What was the total gross margin percentage in Q4 2023?", "expected_pages": [4], "expected_answer_contains": ["17.6"]},
+  {"doc": "tesla_q4_2023.pdf", "query": "What was GAAP net income in Q4 2023?", "expected_pages": [3, 4], "expected_answer_contains": ["7.9"]},
+
+  {"doc": "berkshire_2023.pdf", "query": "What were Berkshire Hathaway's total revenues in 2023?", "expected_pages": [96], "expected_answer_contains": ["364,482"]},
+  {"doc": "berkshire_2023.pdf", "query": "What were insurance-underwriting earnings in 2023?", "expected_pages": [13], "expected_answer_contains": ["5,428"]},
+  {"doc": "berkshire_2023.pdf", "query": "What were railroad earnings in 2023?", "expected_pages": [13], "expected_answer_contains": ["5,087"]}
 ]

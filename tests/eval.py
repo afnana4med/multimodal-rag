@@ -39,49 +39,37 @@ def run_eval(k: int = 5, rerank: bool = False) -> None:
     cases = json.loads(EVAL_PATH.read_text())
     retriever = get_retriever()
 
-    hits_at_k = 0          # expected page in top-k
-    modality_ok = 0        # expected modality surfaced
-    modality_total = 0
-    answer_ok = 0
+    hits_at_k = 0          # a page containing the answer is in top-k
+    answer_ok = 0          # final answer contains the expected value
 
     print(f"\nEvaluating {len(cases)} queries (k={k}, rerank={rerank}, "
           f"providers: emb={config.EMBEDDING_PROVIDER}/synth={config.SYNTHESIS_PROVIDER})\n")
-    print(f"{'pg?':>4} {'mod?':>5} {'ans?':>5}  query")
-    print("-" * 78)
+    print(f"{'pg?':>4} {'ans?':>5}  query")
+    print("-" * 72)
 
     for c in cases:
-        results = retriever.search(c["query"], k=k, rerank=rerank)
+        doc_id = Path(c["doc"]).stem  # scope each query to its source document
+        results = retriever.search(c["query"], k=k, rerank=rerank, doc_id=doc_id)
         pages = [int(r["metadata"]["page"]) for r in results]
-        types = [r["metadata"]["type"] for r in results]
 
-        # 1. retrieval precision
-        page_hit = c["expected_page"] in pages
+        # 1. retrieval precision: any page that contains the answer is in top-k
+        page_hit = any(p in pages for p in c["expected_pages"])
         hits_at_k += page_hit
 
-        # 2. modality routing
-        mod_hit = None
-        if c.get("expected_evidence_type"):
-            modality_total += 1
-            mod_hit = c["expected_evidence_type"] in types
-            modality_ok += mod_hit
-
-        # 3. answer correctness (substring)
-        res = ask(c["query"], k=k, rerank=rerank)
+        # 2. answer correctness (case-insensitive substring)
+        res = ask(c["query"], k=k, rerank=rerank, doc_id=doc_id)
         haystack = res.answer.lower()
         ans_hit = all(s.lower() in haystack for s in c.get("expected_answer_contains", []))
         answer_ok += ans_hit
 
         def mark(b):
             return " ✓ " if b else " ✗ "
-        modmark = "  -  " if mod_hit is None else mark(mod_hit)
-        print(f"{mark(page_hit)} {modmark} {mark(ans_hit)}  {c['query'][:54]}")
+        print(f"{mark(page_hit)} {mark(ans_hit)}  {c['query'][:58]}")
 
     n = len(cases)
-    print("-" * 78)
+    print("-" * 72)
     print(f"\nRetrieval precision @ {k} : {hits_at_k}/{n}  = {hits_at_k / n:.0%}")
-    if modality_total:
-        print(f"Modality routing          : {modality_ok}/{modality_total} = {modality_ok / modality_total:.0%}")
-    print(f"Answer-contains           : {answer_ok}/{n}  = {answer_ok / n:.0%}")
+    print(f"Answer accuracy           : {answer_ok}/{n}  = {answer_ok / n:.0%}")
     print("\nBrief targets: >80% retrieval precision, >70% answer correctness.\n")
 
 

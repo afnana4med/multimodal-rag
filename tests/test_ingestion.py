@@ -10,7 +10,7 @@ import pytest
 from ingestion.chunk_text import chunk_elements
 from ingestion.parse_pdf import Element, parse_pdf
 
-TEST_PDF = Path(__file__).resolve().parent.parent / "data" / "pdfs" / "attention_is_all_you_need.pdf"
+TEST_PDF = Path(__file__).resolve().parent.parent / "data" / "pdfs" / "apple_10q_q2_2026.pdf"
 pytestmark = pytest.mark.skipif(not TEST_PDF.exists(), reason="test PDF not present")
 
 
